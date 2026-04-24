@@ -201,7 +201,7 @@ Logging with JAX-RS filters is beneficial as it offers a **centralized and unifo
 
 ## Author
 
-**Pamina Guru**
+**Pamina Guruparan**
 [GitHub Repository](https://github.com/pamina-guru/smart-campus-api)
 
 ---
