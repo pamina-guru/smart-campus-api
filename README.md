@@ -135,82 +135,77 @@ curl -X DELETE http://localhost:8090/api/v1/rooms/LIB-301
 
 ---
 
-## Conceptual Report (Answers)
+## Conceptual Report
 
-### Part 1 - Q1: JAX-RS Lifecycle
+### Part 1: Service Architecture & Setup
 
-JAX-RS resource classes are **instantiated per request** by default, meaning a new instance is created for every incoming request.
+#### Q1: In your report, explain the default lifecycle of a JAX-RS Resource class. Is a new instance instantiated for every incoming request, or does the runtime treat it as a singleton? Elaborate on how this architectural decision impacts the way you manage and synchronize your in-memory data structures (maps/lists) to prevent data loss or race conditions.
 
-This reduces concurrency issues because each request has its own object instance. However, shared data structures such as the in-memory **DataStore** must still be carefully managed to avoid **race conditions** and data inconsistency.
+In JAX-RS, the resource classes follow a **per-request lifecycle** by default, meaning that a new instance of a resource class is created for each incoming HTTP request. Because each request runs on its own independent object instance, this approach greatly minimizes concurrency problems by preventing unwanted shared state between requests. However, this project uses a centralized in-memory data structure implemented by a singleton **DataStore** to keep shared application data such as rooms, sensors and readings. Consequently, the underlying data structures are shared, but the resource classes themselves are not. Because of this architectural choice, shared collections like lists and maps must be carefully managed to avoid race situations, inconsistent data and unintentional overwrites. Although full synchronization mechanisms are not implemented in this simplified system, the design still highlights the importance of thread-safe handling when dealing with shared resources in real world applications.
 
-### Part 1 - Q2: HATEOAS
+#### Q2: Why is the provision of "Hypermedia" (links and navigation within responses) considered a hallmark of advanced RESTful design (HATEOAS)? How does this approach benefit client developers compared to static documentation?
 
-**HATEOAS** (Hypermedia as the Engine of Application State) allows clients to navigate the API using links provided in responses rather than relying on static documentation.
+The use of **HATEOAS** (Hypermedia as the Engine of Application State) represents a key characteristic of advanced RESTful API design. In this project, the discovery endpoint provides links to available resources, allowing clients to dynamically navigate the API rather than relying on predefined documentation. This approach benefits client developers by making the API self-descriptive and adaptable, as clients can discover available actions at runtime. It reduces tight coupling between client and server implementations and ensures that changes to endpoints can be handled more gracefully without breaking client applications. Compared to static documentation, HATEOAS improves flexibility, scalability and long-term maintainability of the API.
 
-This improves flexibility, reduces coupling, and makes the API **self-descriptive**.
+---
 
-### Part 2 - Q1: IDs vs Full Objects
+### Part 2: Room Management
 
-Returning only **IDs** reduces network bandwidth but requires additional API calls by the client. Returning **full objects** increases payload size but improves usability and reduces client-side complexity.
+#### Q1: When returning a list of rooms, what are the implications of returning only IDs versus returning the full room objects? Consider network bandwidth and client side processing.
 
-### Part 2 - Q2: DELETE Idempotency
+In sending data back out of an API, a design choice has to be made whether to send resource identifiers or full object representations. The **ID-only return** reduces network bandwidth and payload size, which can be useful in large-scale systems. This method, however, involves more client API calls to get the finer details thus raising client-side complexity and latency. Conversely, the **full room objects**, as in this project, offer all the information required in a single response, at the cost of a little heavier payload sizes. This trade-off is to our advantage in terms of client usability and efficiency.
 
-`DELETE` is **idempotent** because repeating the same request does not change the outcome. The first request deletes the resource, and subsequent requests return `404` without additional side effects.
+#### Q2: Is the DELETE operation idempotent in your implementation? Provide a detailed justification by describing what happens if a client mistakenly sends the exact same DELETE request for a room multiple times.
 
-### Part 3 - Q1: @Consumes(JSON)
+The `DELETE` operation in this implementation is **idempotent**, i.e. a series of identical DELETE operations have the same effect without any undesired side effects. The initial deletion of a room is a successful deletion of the room out of the system. In case of a repeat DELETE request, the system returns a `404 Not Found` status, which means that the resource is not there anymore. Notably, there are no additional deletions that follow the initial deletion, which meets the idempotency definition. This action will guarantee the clients reliable and safe interactions even in situations where the requests are accidentally iterated.
 
-If a client sends data in a format other than JSON (e.g., XML or text), JAX-RS will return:
+---
 
-```
-415 Unsupported Media Type
-```
+### Part 3: Sensor Operations & Linking
 
-This ensures that the server only processes supported formats and maintains API consistency.
+#### Q1: We explicitly use the @Consumes(MediaType.APPLICATION_JSON) annotation on the POST method. Explain the technical consequences if a client attempts to send data in a different format, such as text/plain or application/xml. How does JAX-RS handle this mismatch?
 
-### Part 3 - Q2: QueryParam vs Path
+The `@Consumes(MediaType.APPLICATION_JSON)` annotation explicitly defines that the API only accepts JSON-formatted request bodies. If a client attempts to send data in a different format, such as `text/plain` or `application/xml`, the JAX-RS runtime will automatically reject the request and return a **415 Unsupported Media Type** response. This mechanism enforces strict adherence to the API contract and ensures that the server processes only valid and expected input formats. It also prevents potential parsing errors and inconsistencies that could arise from handling unsupported data formats.
 
-Using **query parameters** is more suitable for filtering because they are optional and flexible. **Path parameters** are better for identifying specific resources, whereas query parameters are ideal for searching and filtering collections.
+#### Q2: You implemented this filtering using @QueryParam. Contrast this with an alternative design where the type is part of the URL path (e.g., /api/v1/sensors/type/CO2). Why is the query parameter approach generally considered superior for filtering and searching collections?
 
-### Part 4 - Q1: Sub-Resource Locator Pattern
+Filtering with query parameters, like `/api/v1/sensors?type=CO2` is more appropriate than filtering in the URL path. The query parameters are created to enable **optional filtering and searching** activities in which the clients can narrow down the results dynamically without changing the underlying resource structure. Path parameters, in contrast, are designed to identify individual resources and are less flexible to do filtering. The query parameters allow easy combination of multiple filters and remain clean and intuitive to the API, making it the choice of search and filtering features.
 
-The **Sub-resource Locator** pattern improves modularity by delegating nested logic to separate classes. This avoids large, complex controllers and makes the system easier to maintain and extend.
+---
 
-### Part 4 - Q2: Data Consistency
+### Part 4: Deep Nesting with Sub-Resources
 
-When a new reading is added, the system updates both:
+#### Q1: Discuss the architectural benefits of the Sub-Resource Locator pattern. How does delegating logic to separate classes help manage complexity in large APIs compared to defining every nested path (e.g., sensors/{id}/readings/{rid}) in one massive controller class?
 
-- the **readings history**
-- the sensor's **currentValue**
+This project employs the **Sub-Resource Locator pattern** to deal with nested resources, which in this case are sensor readings. The system does not store all the logic in a single resource class, but instead leaves the work of dealing with nested paths to a special `SensorReadingResource` class. This will enhance the general architecture by ensuring that there is **separation of concerns** and minimization of complexity. It enables each resource group to specialize in a particular task, simplifying codebase management, extension and debugging. This trend in large-scale APIs is used to avoid the development of extremely complicated and hard-to-maintain controller classes.
 
-This ensures consistency across the API.
+To store the historical data, the API has a list of sensor readings. A new reading is appended to the reading history of a sensor when a POST request has been made. The system also changes the `currentValue` field of the appropriate sensor to the latest reading. This side effect provides continuity in relation to the historical data and real-time sensor values to enable the clients to obtain both past trends and present readings. This design illustrates the need to have a synchronized state among the related data entities.
 
-### Part 5 - Q2: Why 422?
+---
 
-HTTP `422` is more accurate than `404` because the request is **syntactically correct** but contains **invalid data** (e.g., non-existing `roomId`).
+### Part 5: Advanced Error Handling, Exception Mapping & Logging
 
-### Part 5 - Q4: Stack Trace Risks
+#### Q1: Why is HTTP 422 often considered more semantically accurate than a standard 404 when the issue is a missing reference inside a valid JSON payload?
 
-Exposing stack traces can reveal:
+In this case, **HTTP 422 (Unprocessable Entity)** is viewed as a more accurate semantic statement than HTTP 404 since the request is syntactically correct and properly formatted, but the data in it is logically incorrect. In the scenario, in this project, a client trying to construct a sensor with a non-existing `roomId` will have a valid endpoint that is accessible and the JSON payload will be well-formed. But the request is not processed because of the violation of a business rule, namely, the presence of the mentioned room. The `404 Not Found` type of response is normally returned in situations where the resource or endpoint being requested is not there, which is not the case in this instance. Thus, HTTP 422 better conveys that the server is aware of the request, but cannot handle it because there are semantic errors in the data and it is therefore the more suitable response to validation errors.
 
-- file paths
-- class names
-- internal logic
+#### Q2: From a cybersecurity standpoint, explain the risks associated with exposing internal Java stack traces to external API consumers. What specific information could an attacker gather from such a trace?
 
-This information can be exploited by attackers to identify **vulnerabilities**.
+Publicizing internal Java stack traces to external API users poses a huge **security risk** as it may disclose confidential information concerning the system implementation. Stack traces frequently carry details like internal class names, package layouts, method names, file names, line numbers and framework or library usage details. The attacker can utilize this information to understand the architecture of the system and what the vulnerabilities are. As an illustration, the familiarity with a particular framework or version can enable attackers to take advantage of known vulnerabilities, whereas file paths and method structures can be used to know how to navigate the system internally. This puts more chance of targeted attacks like injection, unauthorized access or denial of service. The project mitigates these risks by applying a **global exception mapper**, which captures any unforeseen errors and sends a generic HTTP 500 response, without revealing any information about the system, so the system is not exposed to information leakage.
 
-### Part 5 - Q5: Filters vs Manual Logging
+#### Q3: Why is it advantageous to use JAX-RS filters for cross-cutting concerns like logging, rather than manually inserting Logger.info() statements inside every single resource method?
 
-**Filters** allow centralized logging for all requests and responses. This avoids repetitive code and ensures **consistency** across the application.
+Logging with JAX-RS filters is beneficial as it offers a **centralized and uniform way** of managing cross-cutting issues throughout the application. The filters can be used on request and response level, and all incoming HTTP requests and outgoing responses can be intercepted and logged in a consistent fashion without altering the individual resource methods. This will greatly decrease redundancy of the code and will also make sure that all endpoints have logging. By contrast, manually adding `Logger.info()` statements into every resource method results in redundant code, maintenance overhead, and are more likely to omit logs in certain endpoints. Also, filters are used to ensure the separation of concerns by ensuring that logging logic is kept apart from business logic, leading to cleaner, more modular, and maintainable code. This design is particularly beneficial in large scale use where scalability and consistency are important.
 
 ---
 
 ## Author
 
-**Pamina Guruparan**
+**Pamina Guru**
 [GitHub Repository](https://github.com/pamina-guru/smart-campus-api)
 
 ---
 
 ## License
 
-This project is developed for academic purposes. 
+This project is developed for academic purposes.
