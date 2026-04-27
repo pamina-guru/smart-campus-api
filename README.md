@@ -204,8 +204,4 @@ Logging with JAX-RS filters is beneficial as it offers a **centralized and unifo
 **Pamina Guruparan**
 [GitHub Repository](https://github.com/pamina-guru/smart-campus-api)
 
----
 
-## License
-
-This project is developed for academic purposes.
